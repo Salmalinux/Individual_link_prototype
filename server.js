@@ -1,17 +1,75 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const https = require('https');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 app.use(express.json());
 app.use(express.static('public'));
 
-const invites = {};
-let WA_GROUP_LINK = process.env.WA_GROUP_LINK || '';
+// ─── Persistent storage setup ──────────────────────────────────────────────────
+// Use /data if a Railway Volume is mounted there, otherwise fall back to local dir
+const DATA_DIR = fs.existsSync('/data') ? '/data' : path.join(__dirname, 'data');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+const INVITES_FILE = path.join(DATA_DIR, 'invites.json');
+const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
+
+// Load invites from file on startup
+function loadInvites() {
+  try {
+    if (fs.existsSync(INVITES_FILE)) {
+      return JSON.parse(fs.readFileSync(INVITES_FILE, 'utf8'));
+    }
+  } catch (e) {
+    console.error('Error loading invites:', e.message);
+  }
+  return {};
+}
+
+// Save invites to file
+function saveInvites() {
+  try {
+    fs.writeFileSync(INVITES_FILE, JSON.stringify(invites, null, 2), 'utf8');
+  } catch (e) {
+    console.error('Error saving invites:', e.message);
+  }
+}
+
+// Load settings from file on startup
+function loadSettings() {
+  try {
+    if (fs.existsSync(SETTINGS_FILE)) {
+      return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    }
+  } catch (e) {
+    console.error('Error loading settings:', e.message);
+  }
+  return {};
+}
+
+// Save settings to file
+function saveSettings() {
+  try {
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ waLink: WA_GROUP_LINK }, null, 2), 'utf8');
+  } catch (e) {
+    console.error('Error saving settings:', e.message);
+  }
+}
+
+// ─── Initialize from persisted data ────────────────────────────────────────────
+const invites = loadInvites();
+const savedSettings = loadSettings();
+let WA_GROUP_LINK = savedSettings.waLink || process.env.WA_GROUP_LINK || '';
+
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'changeme123';
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const FROM_EMAIL = process.env.FROM_EMAIL || 'invites@yourdomain.com';
 const ORG_NAME = process.env.ORG_NAME || 'Muslimah Excellence Network';
+
+console.log(`Data directory: ${DATA_DIR}`);
+console.log(`Loaded ${Object.keys(invites).length} existing invites from disk`);
 
 // ─── Auth ──────────────────────────────────────────────────────────────────────
 function requireAuth(req, res, next) {
@@ -30,6 +88,7 @@ app.post('/api/settings', requireAuth, (req, res) => {
   if (!waLink || !waLink.startsWith('https://chat.whatsapp.com/'))
     return res.status(400).json({ error: 'Invalid WhatsApp link' });
   WA_GROUP_LINK = waLink;
+  saveSettings(); // ← Persist to disk
   res.json({ ok: true });
 });
 
@@ -84,6 +143,7 @@ app.delete('/api/invites/:token', requireAuth, (req, res) => {
   if (!inv) return res.status(404).json({ error: 'Not found' });
   if (inv.status !== 'pending') return res.status(400).json({ error: 'Cannot revoke' });
   inv.status = 'revoked';
+  saveInvites(); // ← Persist to disk
   res.json({ ok: true });
 });
 
@@ -108,6 +168,7 @@ app.post('/join/:token', (req, res) => {
   // NOW consume the link
   inv.status = 'used';
   inv.usedAt = new Date().toISOString();
+  saveInvites(); // ← Persist to disk
   res.send(redirectPage(inv.name, WA_GROUP_LINK));
 });
 
@@ -115,6 +176,7 @@ app.post('/join/:token', (req, res) => {
 function createInvite(name, phone, email) {
   const token = uuidv4().replace(/-/g, '').substring(0, 16);
   invites[token] = { token, name, phone, email, status: 'pending', createdAt: new Date().toISOString(), usedAt: null };
+  saveInvites(); // ← Persist to disk
   return invites[token];
 }
 
@@ -242,4 +304,3 @@ function errorPage(message) {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Invite system running on port ${PORT}`));
-
