@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Invite Manager — Admin</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #111; min-height: 100vh; }
+
+    /* Login */
+    #login-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .login-box { background: white; border-radius: 16px; padding: 2rem; width: 340px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+    .login-box h1 { font-size: 20px; margin-bottom: 0.25rem; }
+    .login-box p { font-size: 13px; color: #666; margin-bottom: 1.5rem; }
+
+    /* App */
+    #app { display: none; max-width: 780px; margin: 0 auto; padding: 2rem 1rem; }
+    header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; }
+    header h1 { font-size: 20px; font-weight: 600; }
+    .logout-btn { font-size: 12px; color: #888; background: none; border: 1px solid #ddd; border-radius: 8px; padding: 5px 12px; cursor: pointer; }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 4px; border-bottom: 1px solid #eee; margin-bottom: 1.5rem; }
+    .tab { padding: 8px 16px; font-size: 14px; cursor: pointer; border: none; background: none; color: #888; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .tab.active { color: #111; border-bottom-color: #111; font-weight: 500; }
+    .panel { display: none; } .panel.active { display: block; }
+
+    /* Cards */
+    .card { background: white; border-radius: 14px; padding: 1.25rem; margin-bottom: 1rem; border: 1px solid #eee; }
+    .card-title { font-size: 14px; font-weight: 500; margin-bottom: 1rem; }
+
+    /* Stats */
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 1.5rem; }
+    .stat { background: white; border-radius: 12px; padding: 1rem; border: 1px solid #eee; }
+    .stat-num { font-size: 26px; font-weight: 600; }
+    .stat-label { font-size: 12px; color: #888; margin-top: 2px; }
+
+    /* Forms */
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+    .form-group { display: flex; flex-direction: column; gap: 5px; }
+    label { font-size: 12px; color: #666; }
+    input { padding: 9px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; width: 100%; outline: none; }
+    input:focus { border-color: #111; }
+
+    /* Buttons */
+    .btn { padding: 9px 18px; border-radius: 8px; font-size: 14px; cursor: pointer; font-weight: 500; border: none; }
+    .btn-dark { background: #111; color: white; }
+    .btn-dark:hover { background: #333; }
+    .btn-sm { padding: 5px 11px; font-size: 12px; border-radius: 6px; cursor: pointer; font-weight: 500; border: 1px solid #ddd; background: white; }
+    .btn-revoke { color: #c0392b; border-color: #f5c6c6; }
+    .btn-revoke:hover { background: #fff5f5; }
+
+    /* Generated link box */
+    .link-result { display: none; background: #f0faf4; border: 1px solid #b7e4c7; border-radius: 10px; padding: 1rem; margin-top: 1rem; }
+    .link-result p { font-size: 13px; color: #2d6a4f; margin-bottom: 8px; }
+    .link-box { background: white; border: 1px solid #ddd; border-radius: 8px; padding: 8px 12px; font-family: monospace; font-size: 12px; word-break: break-all; color: #444; margin-bottom: 8px; }
+
+    /* Table */
+    .filter-row { display: flex; gap: 6px; margin-bottom: 1rem; flex-wrap: wrap; }
+    .f-btn { background: white; border: 1px solid #ddd; border-radius: 20px; padding: 4px 13px; font-size: 12px; cursor: pointer; color: #888; }
+    .f-btn.active { background: #111; color: white; border-color: #111; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 8px 10px; font-size: 11px; color: #888; font-weight: 500; border-bottom: 1px solid #f0f0f0; text-transform: uppercase; letter-spacing: 0.04em; }
+    td { padding: 10px; border-bottom: 1px solid #f5f5f5; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    .badge { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+    .badge-pending { background: #fff8e6; color: #9a6700; }
+    .badge-used    { background: #edfaf2; color: #1a7a45; }
+    .badge-revoked { background: #fff0f0; color: #c0392b; }
+    .empty-row { text-align: center; padding: 2rem; color: #aaa; font-size: 13px; }
+    .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; background: #111; color: white; padding: 10px 18px; border-radius: 10px; font-size: 13px; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 999; }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<!-- Login -->
+<div id="login-screen">
+  <div class="login-box">
+    <h1>Invite Manager</h1>
+    <p>Admin access only</p>
+    <div class="form-group" style="margin-bottom:12px;">
+      <label>Admin password</label>
+      <input type="password" id="pwd-input" placeholder="Enter password" onkeydown="if(event.key==='Enter')login()" />
+    </div>
+    <button class="btn btn-dark" style="width:100%" onclick="login()">Sign in</button>
+    <p id="login-err" style="color:#c0392b;font-size:12px;margin-top:8px;display:none;">Wrong password. Try again.</p>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app">
+  <header>
+    <h1>Invite Manager</h1>
+    <button class="logout-btn" onclick="logout()">Sign out</button>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('generate', this)">Generate invite</button>
+    <button class="tab" onclick="switchTab('members', this)">Members</button>
+    <button class="tab" onclick="switchTab('settings', this)">Settings</button>
+  </div>
+
+  <!-- Generate -->
+  <div id="panel-generate" class="panel active">
+    <div class="card">
+      <p class="card-title">New one-time invite link</p>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Full name</label>
+          <input type="text" id="in-name" placeholder="e.g. Amina Yusuf" />
+        </div>
+        <div class="form-group">
+          <label>Phone number</label>
+          <input type="tel" id="in-phone" placeholder="e.g. +233241234567" />
+        </div>
+      </div>
+      <button class="btn btn-dark" onclick="generateInvite()">Generate link</button>
+      <div class="link-result" id="link-result">
+        <p>Link generated! Send this to the member directly:</p>
+        <div class="link-box" id="link-display"></div>
+        <button class="btn-sm" onclick="copyLink()">Copy link</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Members -->
+  <div id="panel-members" class="panel">
+    <div class="stats">
+      <div class="stat"><div class="stat-num" id="s-total">0</div><div class="stat-label">Total invites</div></div>
+      <div class="stat"><div class="stat-num" id="s-used">0</div><div class="stat-label">Joined</div></div>
+      <div class="stat"><div class="stat-num" id="s-pending">0</div><div class="stat-label">Pending</div></div>
+    </div>
+    <div class="filter-row">
+      <button class="f-btn active" onclick="setFilter('all',this)">All</button>
+      <button class="f-btn" onclick="setFilter('pending',this)">Pending</button>
+      <button class="f-btn" onclick="setFilter('used',this)">Joined</button>
+      <button class="f-btn" onclick="setFilter('revoked',this)">Revoked</button>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden;">
+      <table>
+        <thead><tr><th>Name</th><th>Phone</th><th>Status</th><th>Created</th><th></th></tr></thead>
+        <tbody id="members-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div id="panel-settings" class="panel">
+    <div class="card">
+      <p class="card-title">WhatsApp group link</p>
+      <p style="font-size:13px;color:#888;margin-bottom:12px;">This is your real group link. Members are sent here after using their unique invite.</p>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label>WhatsApp join link</label>
+        <input type="url" id="wa-input" placeholder="https://chat.whatsapp.com/xxxxxxxx" />
+      </div>
+      <button class="btn btn-dark" onclick="saveSettings()">Save</button>
+    </div>
+    <div class="card">
+      <p class="card-title">How it works</p>
+      <div style="font-size:13px;color:#666;line-height:1.9;">
+        <div>1. Paste your real WhatsApp group link in the field above.</div>
+        <div>2. For each member, generate a unique one-time link.</div>
+        <div>3. Send that link to the member via WhatsApp, SMS, or email.</div>
+        <div>4. When they click it, they are taken to the group — and the link expires instantly.</div>
+        <div>5. If they share it, it will not work for anyone else.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  let password = '';
+  let allMembers = [];
+  let currentFilter = 'all';
+  let lastLink = '';
+
+  function login() {
+    const pwd = document.getElementById('pwd-input').value;
+    fetch('/api/settings', { headers: { 'x-admin-password': pwd } })
+      .then(r => {
+        if (r.status === 401) { document.getElementById('login-err').style.display = 'block'; return; }
+        return r.json().then(data => {
+          password = pwd;
+          document.getElementById('login-screen').style.display = 'none';
+          document.getElementById('app').style.display = 'block';
+          document.getElementById('login-err').style.display = 'none';
+          if (data.waLink) document.getElementById('wa-input').value = data.waLink;
+          loadMembers();
+        });
+      }).catch(() => showToast('Connection error'));
+  }
+
+  function logout() {
+    password = '';
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('pwd-input').value = '';
+  }
+
+  function switchTab(tab, btn) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-' + tab).classList.add('active');
+    if (tab === 'members') loadMembers();
+  }
+
+  function generateInvite() {
+    const name = document.getElementById('in-name').value.trim();
+    const phone = document.getElementById('in-phone').value.trim();
+    if (!name || !phone) { showToast('Please enter name and phone'); return; }
+    fetch('/api/invites', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
+      body: JSON.stringify({ name, phone })
+    }).then(r => r.json()).then(data => {
+      lastLink = data.link;
+      document.getElementById('link-display').textContent = data.link;
+      document.getElementById('link-result').style.display = 'block';
+      document.getElementById('in-name').value = '';
+      document.getElementById('in-phone').value = '';
+    });
+  }
+
+  function copyLink() {
+    navigator.clipboard.writeText(lastLink).then(() => showToast('Link copied!'));
+  }
+
+  function loadMembers() {
+    fetch('/api/invites', { headers: { 'x-admin-password': password } })
+      .then(r => r.json()).then(data => {
+        allMembers = data;
+        renderMembers();
+      });
+  }
+
+  function setFilter(f, btn) {
+    currentFilter = f;
+    document.querySelectorAll('.f-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderMembers();
+  }
+
+  function renderMembers() {
+    const list = currentFilter === 'all' ? allMembers : allMembers.filter(m => m.status === currentFilter);
+    document.getElementById('s-total').textContent = allMembers.length;
+    document.getElementById('s-used').textContent = allMembers.filter(m => m.status === 'used').length;
+    document.getElementById('s-pending').textContent = allMembers.filter(m => m.status === 'pending').length;
+    const tbody = document.getElementById('members-body');
+    if (!list.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-row">No members here yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = list.map(m => `
+      <tr>
+        <td style="font-weight:500">${m.name}</td>
+        <td style="color:#888">${m.phone}</td>
+        <td><span class="badge badge-${m.status}">${m.status === 'used' ? 'Joined' : m.status === 'revoked' ? 'Revoked' : 'Pending'}</span></td>
+        <td style="color:#aaa;font-size:12px">${new Date(m.createdAt).toLocaleDateString()}</td>
+        <td>${m.status === 'pending' ? `<button class="btn-sm btn-revoke" onclick="revokeInvite('${m.token}')">Revoke</button>` : ''}</td>
+      </tr>
+    `).join('');
+  }
+
+  function revokeInvite(token) {
+    fetch('/api/invites/' + token, { method: 'DELETE', headers: { 'x-admin-password': password } })
+      .then(r => r.json()).then(() => { loadMembers(); showToast('Link revoked'); });
+  }
+
+  function saveSettings() {
+    const waLink = document.getElementById('wa-input').value.trim();
+    fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
+      body: JSON.stringify({ waLink })
+    }).then(r => r.json()).then(d => {
+      if (d.error) showToast(d.error);
+      else showToast('Settings saved!');
+    });
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2500);
+  }
+</script>
+</body>
+</html>
