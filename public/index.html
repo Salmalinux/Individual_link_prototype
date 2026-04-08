@@ -15,7 +15,7 @@
     header{display:flex;align-items:center;justify-content:space-between;margin-bottom:2rem;}
     header h1{font-size:20px;font-weight:600;}
     .logout-btn{font-size:12px;color:#888;background:none;border:1px solid #ddd;border-radius:8px;padding:5px 12px;cursor:pointer;}
-    .tabs{display:flex;gap:4px;border-bottom:1px solid #eee;margin-bottom:1.5rem;}
+    .tabs{display:flex;gap:4px;border-bottom:1px solid #eee;margin-bottom:1.5rem;flex-wrap:wrap;}
     .tab{padding:8px 16px;font-size:14px;cursor:pointer;border:none;background:none;color:#888;border-bottom:2px solid transparent;margin-bottom:-1px;}
     .tab.active{color:#111;border-bottom-color:#111;font-weight:500;}
     .panel{display:none;}.panel.active{display:block;}
@@ -36,6 +36,8 @@
     .btn-dark:hover{background:#333;}
     .btn-green{background:#25D366;color:white;}
     .btn-green:hover{background:#1ebe5d;}
+    .btn-red{background:#c0392b;color:white;}
+    .btn-red:hover{background:#a93226;}
     .btn-sm{padding:5px 11px;font-size:12px;border-radius:6px;cursor:pointer;font-weight:500;border:1px solid #ddd;background:white;}
     .btn-revoke{color:#c0392b;border-color:#f5c6c6;}
     .btn-revoke:hover{background:#fff5f5;}
@@ -67,6 +69,9 @@
     .progress-bar{height:6px;background:#eee;border-radius:3px;margin:1rem 0;overflow:hidden;}
     .progress-fill{height:100%;background:#25D366;border-radius:3px;transition:width 0.3s;}
     .info-box{background:#f0f7ff;border:1px solid #c8e0f9;border-radius:10px;padding:1rem;font-size:13px;color:#1565c0;line-height:1.7;margin-bottom:1rem;}
+    .warning-box{background:#fff5f5;border:1px solid #f5c6c6;border-radius:10px;padding:1rem;font-size:13px;color:#c0392b;line-height:1.7;margin-bottom:1rem;}
+    .confirm-input{border:2px solid #f5c6c6 !important;margin-top:8px;}
+    .confirm-input:focus{border-color:#c0392b !important;}
   </style>
 </head>
 <body>
@@ -95,6 +100,7 @@
     <button class="tab" onclick="switchTab('bulk',this)">Bulk invite</button>
     <button class="tab" onclick="switchTab('members',this)">Members</button>
     <button class="tab" onclick="switchTab('settings',this)">Settings</button>
+    <button class="tab" onclick="switchTab('reset',this)">Reset Data</button>
   </div>
 
   <!-- Single invite -->
@@ -220,6 +226,29 @@
       </div>
     </div>
   </div>
+
+  <!-- Reset Data -->
+  <div id="panel-reset" class="panel">
+    <div class="warning-box">
+      <strong>⚠️ Danger zone.</strong> Resetting will permanently delete all invite records and links. This cannot be undone. Your WhatsApp group link and settings will be kept.
+    </div>
+
+    <div class="card">
+      <p class="card-title">Reset all invite data</p>
+      <p style="font-size:13px;color:#666;margin-bottom:12px;">This will clear all member records — pending, joined, and revoked invites. All previously generated links will stop working.</p>
+
+      <div id="reset-stats" style="margin-bottom:1rem;">
+        <p style="font-size:13px;color:#888;">Loading current data count...</p>
+      </div>
+
+      <div class="form-group" style="margin-bottom:12px;">
+        <label>Type <strong>RESET</strong> to confirm</label>
+        <input type="text" id="reset-confirm-input" class="confirm-input" placeholder="Type RESET here" autocomplete="off"/>
+      </div>
+      <button class="btn btn-red" id="reset-btn" onclick="resetAllData()" disabled>Clear all invite data</button>
+      <p id="reset-success" style="color:#1a7a45;font-size:13px;margin-top:10px;display:none;">✅ All invite data has been cleared. You can start fresh now.</p>
+    </div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -261,6 +290,7 @@
     btn.classList.add('active');
     document.getElementById('panel-' + tab).classList.add('active');
     if (tab === 'members') loadMembers();
+    if (tab === 'reset') loadResetStats();
   }
 
   function generateInvite() {
@@ -421,6 +451,70 @@
       headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
       body: JSON.stringify({ waLink })
     }).then(r => r.json()).then(d => { if (d.error) showToast(d.error); else showToast('Settings saved!'); });
+  }
+
+  // ── Reset Data ───────────────────────────────────────────────────────────────
+  function loadResetStats() {
+    // Reset the UI state each time the tab is opened
+    document.getElementById('reset-confirm-input').value = '';
+    document.getElementById('reset-btn').disabled = true;
+    document.getElementById('reset-success').style.display = 'none';
+
+    fetch('/api/invites', { headers: { 'x-admin-password': password } })
+      .then(r => r.json()).then(data => {
+        const total = data.length;
+        const pending = data.filter(m => m.status === 'pending').length;
+        const used = data.filter(m => m.status === 'used').length;
+        const revoked = data.filter(m => m.status === 'revoked').length;
+        document.getElementById('reset-stats').innerHTML = `
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+            <div style="background:#f9f9f9;border-radius:10px;padding:10px;text-align:center;">
+              <div style="font-size:22px;font-weight:600;">${total}</div>
+              <div style="font-size:11px;color:#888;">Total</div>
+            </div>
+            <div style="background:#fff8e6;border-radius:10px;padding:10px;text-align:center;">
+              <div style="font-size:22px;font-weight:600;color:#9a6700;">${pending}</div>
+              <div style="font-size:11px;color:#888;">Pending</div>
+            </div>
+            <div style="background:#edfaf2;border-radius:10px;padding:10px;text-align:center;">
+              <div style="font-size:22px;font-weight:600;color:#1a7a45;">${used}</div>
+              <div style="font-size:11px;color:#888;">Joined</div>
+            </div>
+            <div style="background:#fff0f0;border-radius:10px;padding:10px;text-align:center;">
+              <div style="font-size:22px;font-weight:600;color:#c0392b;">${revoked}</div>
+              <div style="font-size:11px;color:#888;">Revoked</div>
+            </div>
+          </div>
+        `;
+      });
+  }
+
+  // Enable the reset button only when user types RESET
+  document.addEventListener('input', function(e) {
+    if (e.target.id === 'reset-confirm-input') {
+      document.getElementById('reset-btn').disabled = e.target.value.trim() !== 'RESET';
+    }
+  });
+
+  function resetAllData() {
+    const confirmVal = document.getElementById('reset-confirm-input').value.trim();
+    if (confirmVal !== 'RESET') { showToast('Please type RESET to confirm'); return; }
+
+    fetch('/api/invites/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-password': password }
+    }).then(r => r.json()).then(data => {
+      if (data.ok) {
+        document.getElementById('reset-success').style.display = 'block';
+        document.getElementById('reset-confirm-input').value = '';
+        document.getElementById('reset-btn').disabled = true;
+        allMembers = [];
+        showToast('All invite data cleared!');
+        loadResetStats();
+      } else {
+        showToast(data.error || 'Reset failed');
+      }
+    }).catch(() => showToast('Connection error'));
   }
 
   function showToast(msg) {
