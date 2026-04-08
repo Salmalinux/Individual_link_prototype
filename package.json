@@ -1,7 +1,7 @@
 {
   "name": "whatsapp-invite-system",
-  "version": "1.0.0",
-  "description": "One-time WhatsApp invite link manager",
+  "version": "2.0.0",
+  "description": "One-time WhatsApp invite link manager with bulk invites and email sending",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
