@@ -66,7 +66,7 @@ let WA_GROUP_LINK = savedSettings.waLink || process.env.WA_GROUP_LINK || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'changeme123';
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const FROM_EMAIL = process.env.FROM_EMAIL || 'invites@yourdomain.com';
-const ORG_NAME = process.env.ORG_NAME || 'IGNITE YOUTH EMPOWERMENT INTIATIVE';
+const ORG_NAME = process.env.ORG_NAME || 'IGNITE YOUTH EMPOWERMENT INITIATIVE';
 
 console.log(`Data directory: ${DATA_DIR}`);
 console.log(`Loaded ${Object.keys(invites).length} existing invites from disk`);
@@ -144,6 +144,17 @@ app.delete('/api/invites/:token', requireAuth, (req, res) => {
   if (inv.status !== 'pending') return res.status(400).json({ error: 'Cannot revoke' });
   inv.status = 'revoked';
   saveInvites(); // ← Persist to disk
+  res.json({ ok: true });
+});
+
+// ─── Reset all invites ─────────────────────────────────────────────────────────
+app.post('/api/invites/reset', requireAuth, (req, res) => {
+  // Delete all invite keys from the object
+  for (const key of Object.keys(invites)) {
+    delete invites[key];
+  }
+  saveInvites(); // ← Persist empty state to disk
+  console.log('All invite data has been reset by admin');
   res.json({ ok: true });
 });
 
