@@ -157,13 +157,29 @@ function sendEmail(to, name, link) {
       to: [to],
       subject: `Your invitation to join ${ORG_NAME}`,
       html: `
-        <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:2rem;">
-          <h2 style="color:#111;">Hello, ${name}!</h2>
-          <p style="color:#444;line-height:1.6;">You have been invited to join the <strong>${ORG_NAME}</strong> WhatsApp group.</p>
-          <p style="color:#444;line-height:1.6;">Click the button below to join. This link is unique to you and can only be used once — please do not share it.</p>
-          <a href="${link}" style="display:inline-block;margin:1.5rem 0;background:#25D366;color:white;padding:14px 28px;border-radius:10px;text-decoration:none;font-weight:600;font-size:15px;">Join the Group</a>
-          <p style="color:#999;font-size:12px;">If the button does not work, copy this link into your browser:<br>${link}</p>
-          <p style="color:#999;font-size:12px;margin-top:1rem;">Do not share this link — it is personal to you and will expire after one use.</p>
+        <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:2rem;background:#ffffff;">
+          <h2 style="color:#111111;font-size:20px;">Hello, ${name}!</h2>
+          <p style="color:#444444;line-height:1.6;font-size:15px;">You have been invited to join the <strong>${ORG_NAME}</strong> WhatsApp group.</p>
+          <p style="color:#444444;line-height:1.6;font-size:15px;">Click the button below to join. This link is unique to you and can only be used once — please do not share it.</p>
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin:1.5rem 0;">
+            <tr>
+              <td align="center">
+                <table cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td align="center" bgcolor="#25D366" style="border-radius:10px;">
+                      <a href="${link}" target="_blank" style="display:inline-block;padding:14px 32px;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:10px;background-color:#25D366;">
+                        ✅ Join the WhatsApp Group
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+          <p style="color:#666666;font-size:14px;line-height:1.6;">If the button above does not work, click this link directly:</p>
+          <p style="font-size:14px;word-break:break-all;"><a href="${link}" target="_blank" style="color:#25D366;">${link}</a></p>
+          <hr style="border:none;border-top:1px solid #eeeeee;margin:1.5rem 0;"/>
+          <p style="color:#999999;font-size:12px;">Do not share this link — it is personal to you and will expire after one use.</p>
         </div>
       `
     });
