@@ -1,75 +1,25 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const https = require('https');
-const fs = require('fs');
-const path = require('path');
 
 const app = express();
 app.use(express.json());
 app.use(express.static('public'));
 
-// ─── Persistent storage setup ──────────────────────────────────────────────────
-// Use /data if a Railway Volume is mounted there, otherwise fall back to local dir
-const DATA_DIR = fs.existsSync('/data') ? '/data' : path.join(__dirname, 'data');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-
-const INVITES_FILE = path.join(DATA_DIR, 'invites.json');
-const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
-
-// Load invites from file on startup
-function loadInvites() {
-  try {
-    if (fs.existsSync(INVITES_FILE)) {
-      return JSON.parse(fs.readFileSync(INVITES_FILE, 'utf8'));
-    }
-  } catch (e) {
-    console.error('Error loading invites:', e.message);
-  }
-  return {};
-}
-
-// Save invites to file
-function saveInvites() {
-  try {
-    fs.writeFileSync(INVITES_FILE, JSON.stringify(invites, null, 2), 'utf8');
-  } catch (e) {
-    console.error('Error saving invites:', e.message);
-  }
-}
-
-// Load settings from file on startup
-function loadSettings() {
-  try {
-    if (fs.existsSync(SETTINGS_FILE)) {
-      return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
-    }
-  } catch (e) {
-    console.error('Error loading settings:', e.message);
-  }
-  return {};
-}
-
-// Save settings to file
-function saveSettings() {
-  try {
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ waLink: WA_GROUP_LINK }, null, 2), 'utf8');
-  } catch (e) {
-    console.error('Error saving settings:', e.message);
-  }
-}
-
-// ─── Initialize from persisted data ────────────────────────────────────────────
-const invites = loadInvites();
-const savedSettings = loadSettings();
-let WA_GROUP_LINK = savedSettings.waLink || process.env.WA_GROUP_LINK || '';
-
+const invites = {};
+let WA_GROUP_LINK = process.env.WA_GROUP_LINK || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'changeme123';
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
-const FROM_EMAIL = process.env.FROM_EMAIL || 'invites@yourdomain.com';
-const ORG_NAME = process.env.ORG_NAME || 'IGNITE YOUTH EMPOWERMENT INITIATIVE';
+const FROM_EMAIL = process.env.FROM_EMAIL || 'onboarding@resend.dev';
+const ORG_NAME = process.env.ORG_NAME || 'Our Organisation';
 
-console.log(`Data directory: ${DATA_DIR}`);
-console.log(`Loaded ${Object.keys(invites).length} existing invites from disk`);
+// Log env vars on startup so we can see them in Render logs
+console.log('=== STARTUP CONFIG ===');
+console.log('ORG_NAME:', ORG_NAME);
+console.log('FROM_EMAIL:', FROM_EMAIL);
+console.log('RESEND_API_KEY set:', RESEND_API_KEY ? 'YES (' + RESEND_API_KEY.substring(0,8) + '...)' : 'NO');
+console.log('WA_GROUP_LINK set:', WA_GROUP_LINK ? 'YES' : 'NO');
+console.log('======================');
 
 // ─── Auth ──────────────────────────────────────────────────────────────────────
 function requireAuth(req, res, next) {
@@ -88,22 +38,43 @@ app.post('/api/settings', requireAuth, (req, res) => {
   if (!waLink || !waLink.startsWith('https://chat.whatsapp.com/'))
     return res.status(400).json({ error: 'Invalid WhatsApp link' });
   WA_GROUP_LINK = waLink;
-  saveSettings(); // ← Persist to disk
   res.json({ ok: true });
 });
 
 // ─── Single invite ─────────────────────────────────────────────────────────────
-app.post('/api/invites', requireAuth, (req, res) => {
+app.post('/api/invites', requireAuth, async (req, res) => {
   const { name, phone, email } = req.body;
   if (!name || !phone) return res.status(400).json({ error: 'Name and phone required' });
+
   const inv = createInvite(name, phone, email || '');
   const host = `${req.protocol}://${req.get('host')}`;
-  res.json({ token: inv.token, link: `${host}/join/${inv.token}` });
+  const link = `${host}/join/${inv.token}`;
+
+  let emailStatus = 'no_email';
+
+  if (email && email.trim()) {
+    if (!RESEND_API_KEY) {
+      console.log('Email skipped: RESEND_API_KEY not set');
+      emailStatus = 'no_api_key';
+    } else {
+      try {
+        console.log(`Sending email to ${email} for ${name}...`);
+        await sendEmail(email.trim(), name.trim(), link);
+        console.log(`Email sent successfully to ${email}`);
+        emailStatus = 'sent';
+      } catch (e) {
+        console.error('Email send failed:', e.message);
+        emailStatus = 'failed: ' + e.message;
+      }
+    }
+  }
+
+  res.json({ token: inv.token, link, emailStatus });
 });
 
 // ─── Bulk invite ───────────────────────────────────────────────────────────────
 app.post('/api/invites/bulk', requireAuth, async (req, res) => {
-  const { members } = req.body; // [{ name, phone, email }]
+  const { members } = req.body;
   if (!Array.isArray(members) || members.length === 0)
     return res.status(400).json({ error: 'No members provided' });
 
@@ -111,7 +82,10 @@ app.post('/api/invites/bulk', requireAuth, async (req, res) => {
   const results = [];
 
   for (const m of members) {
-    if (!m.name || !m.phone) { results.push({ ...m, status: 'skipped', reason: 'Missing name or phone' }); continue; }
+    if (!m.name || !m.phone) {
+      results.push({ ...m, status: 'skipped', reason: 'Missing name or phone' });
+      continue;
+    }
     const inv = createInvite(m.name.trim(), m.phone.trim(), (m.email || '').trim());
     const link = `${host}/join/${inv.token}`;
     let emailStatus = 'no_email';
@@ -121,6 +95,7 @@ app.post('/api/invites/bulk', requireAuth, async (req, res) => {
         await sendEmail(m.email.trim(), m.name.trim(), link);
         emailStatus = 'sent';
       } catch (e) {
+        console.error('Bulk email failed for', m.email, e.message);
         emailStatus = 'failed';
       }
     }
@@ -137,49 +112,34 @@ app.get('/api/invites', requireAuth, (req, res) => {
   res.json(list.reverse());
 });
 
-// ─── Revoke invite ─────────────────────────────────────────────────────────────
+// ─── Revoke ────────────────────────────────────────────────────────────────────
 app.delete('/api/invites/:token', requireAuth, (req, res) => {
   const inv = invites[req.params.token];
   if (!inv) return res.status(404).json({ error: 'Not found' });
   if (inv.status !== 'pending') return res.status(400).json({ error: 'Cannot revoke' });
   inv.status = 'revoked';
-  saveInvites(); // ← Persist to disk
   res.json({ ok: true });
 });
 
-// ─── Reset all invites ─────────────────────────────────────────────────────────
-app.post('/api/invites/reset', requireAuth, (req, res) => {
-  // Delete all invite keys from the object
-  for (const key of Object.keys(invites)) {
-    delete invites[key];
-  }
-  saveInvites(); // ← Persist empty state to disk
-  console.log('All invite data has been reset by admin');
-  res.json({ ok: true });
-});
-
-// ─── PUBLIC: Show join page (GET — does NOT consume link, safe from scanners) ──
+// ─── PUBLIC: Show join confirmation page (GET — safe from link scanners) ───────
 app.get('/join/:token', (req, res) => {
   const inv = invites[req.params.token];
   if (!inv) return res.send(errorPage('This invite link is invalid or does not exist.'));
   if (inv.status === 'used') return res.send(errorPage('This invite link has already been used. Each link can only be used once. Please contact your admin for a new one.'));
   if (inv.status === 'revoked') return res.send(errorPage('This invite link has been revoked. Please contact your admin.'));
   if (!WA_GROUP_LINK) return res.send(errorPage('The group link has not been set up yet. Please contact your admin.'));
-  // Show confirmation page — link is NOT consumed yet
   res.send(confirmPage(inv.name, inv.token));
 });
 
-// ─── PUBLIC: Confirm join (POST — consumes link, only real users do this) ─────
+// ─── PUBLIC: Confirm join (POST — consumes the link) ──────────────────────────
 app.post('/join/:token', (req, res) => {
   const inv = invites[req.params.token];
   if (!inv) return res.send(errorPage('This invite link is invalid.'));
   if (inv.status === 'used') return res.send(errorPage('This invite link has already been used.'));
   if (inv.status === 'revoked') return res.send(errorPage('This invite link has been revoked.'));
   if (!WA_GROUP_LINK) return res.send(errorPage('Group link not configured.'));
-  // NOW consume the link
   inv.status = 'used';
   inv.usedAt = new Date().toISOString();
-  saveInvites(); // ← Persist to disk
   res.send(redirectPage(inv.name, WA_GROUP_LINK));
 });
 
@@ -187,7 +147,6 @@ app.post('/join/:token', (req, res) => {
 function createInvite(name, phone, email) {
   const token = uuidv4().replace(/-/g, '').substring(0, 16);
   invites[token] = { token, name, phone, email, status: 'pending', createdAt: new Date().toISOString(), usedAt: null };
-  saveInvites(); // ← Persist to disk
   return invites[token];
 }
 
@@ -199,12 +158,12 @@ function sendEmail(to, name, link) {
       subject: `Your invitation to join ${ORG_NAME}`,
       html: `
         <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:2rem;">
-          <h2 style="color:#111;">Assalamu Alaikum, ${name}!</h2>
+          <h2 style="color:#111;">Hello, ${name}!</h2>
           <p style="color:#444;line-height:1.6;">You have been invited to join the <strong>${ORG_NAME}</strong> WhatsApp group.</p>
-          <p style="color:#444;line-height:1.6;">Click the button below to join. This link is unique to you and can only be used once.</p>
+          <p style="color:#444;line-height:1.6;">Click the button below to join. This link is unique to you and can only be used once — please do not share it.</p>
           <a href="${link}" style="display:inline-block;margin:1.5rem 0;background:#25D366;color:white;padding:14px 28px;border-radius:10px;text-decoration:none;font-weight:600;font-size:15px;">Join the Group</a>
-          <p style="color:#999;font-size:12px;">If the button doesn't work, copy this link into your browser:<br>${link}</p>
-          <p style="color:#999;font-size:12px;">Do not share this link — it is personal to you.</p>
+          <p style="color:#999;font-size:12px;">If the button does not work, copy this link into your browser:<br>${link}</p>
+          <p style="color:#999;font-size:12px;margin-top:1rem;">Do not share this link — it is personal to you and will expire after one use.</p>
         </div>
       `
     });
@@ -213,17 +172,29 @@ function sendEmail(to, name, link) {
       hostname: 'api.resend.com',
       path: '/emails',
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+      headers: {
+        'Authorization': `Bearer ${RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body)
+      }
     };
 
-    const req = https.request(options, r => {
-      let d = '';
-      r.on('data', c => d += c);
-      r.on('end', () => r.statusCode < 300 ? resolve(d) : reject(new Error(d)));
+    const request = https.request(options, response => {
+      let data = '';
+      response.on('data', chunk => data += chunk);
+      response.on('end', () => {
+        console.log('Resend response status:', response.statusCode);
+        console.log('Resend response body:', data);
+        if (response.statusCode < 300) {
+          resolve(data);
+        } else {
+          reject(new Error(`Resend error ${response.statusCode}: ${data}`));
+        }
+      });
     });
-    req.on('error', reject);
-    req.write(body);
-    req.end();
+    request.on('error', reject);
+    request.write(body);
+    request.end();
   });
 }
 
